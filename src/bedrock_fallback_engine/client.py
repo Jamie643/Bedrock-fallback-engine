@@ -7,7 +7,7 @@ AWS errors into our own exception hierarchy.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -68,17 +68,19 @@ class BedrockClient:
             BedrockEngineError: On any other AWS failure.
         """
         try:
-            return self._client.converse(
+            raw = self._client.converse(
                 modelId=model_id,
                 messages=messages,
                 **kwargs,
             )
+            return cast("dict[str, Any]", raw)
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "Unknown")
+            response_dict = cast("dict[str, Any]", exc.response)
             if code in THROTTLING_CODES:
                 raise BedrockThrottlingError(
                     f"Bedrock throttled in {self.region}: {code}",
-                    response=exc.response,
+                    response=response_dict,
                 ) from exc
             if code in RETRYABLE_CODES:
                 raise BedrockEngineError(
@@ -105,7 +107,8 @@ class BedrockClient:
             }
         """
         try:
-            return response["output"]["message"]["content"][0]["text"]
+            text = response["output"]["message"]["content"][0]["text"]
+            return cast("str", text)
         except (KeyError, IndexError, TypeError) as exc:
             raise BedrockEngineError(
                 f"Unexpected Converse response shape: {response!r}"
