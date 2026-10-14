@@ -7,7 +7,7 @@ name = "bedrock-fallback-engine"
 version = "0.1.0"
 description = "AWS-native resilience layer for Amazon Bedrock: cross-region and cross-model failover with schema validation."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Jamie643" }]
 keywords = ["aws", "bedrock", "llm", "resilience", "fallback", "circuit-breaker"]
@@ -16,7 +16,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -51,20 +50,20 @@ addopts = "-v --cov=bedrock_fallback_engine --cov-report=term-missing"
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 ignore = [
-    "N818",   # exception classes are allowed without "Error" suffix
-    "I001",   # import sorting handled by ruff format
-    "E501",   # line length handled by ruff format
-    "N803",   # AWS SDK uses camelCase kwargs (modelId, inputTokens, ...)
-    "N806",   # class aliases in test factories use PascalCase
+    "N818",
+    "I001",
+    "E501",
+    "N803",
+    "N806",
 ]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 strict = true
 warn_unused_ignores = true
 explicit_package_bases = true
