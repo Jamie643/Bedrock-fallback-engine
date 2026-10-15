@@ -119,7 +119,11 @@ fields @timestamp, RouteLabel, FromRoute, ToRoute
 
 The default route chain includes **two AWS-native resilience tiers**:
 
-1. **Cross
+1. **Cross-region inference profile** — `us.anthropic.claude-3-5-sonnet-20241022-v2:0`. Bedrock auto-routes this across any US region with capacity. Platform-level resilience.
+2. **Emergency Titan route** — `amazon.titan-text-premier-v1:0`. Amazon's own model. Rarely throttled, always available.
+
+No local AI. No external service. Pure Bedrock → Bedrock → Bedrock failover.
+
 ---
 
 ## Design principles
