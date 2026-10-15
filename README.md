@@ -1,25 +1,24 @@
-# Bedrock-fallback-engine
 # bedrock-fallback-engine
 
-> AWS-native resilience for Amazon Bedrock. Cross-region, cross-model failover with schema validation — built on [agent-fallback-sentinel](https://github.com/Jamie643/agent-fallback-sentinel).
+> AWS-native resilience for Amazon Bedrock. Cross-region, cross-model failover with schema validation and per-route telemetry.
 
 [![CI](https://github.com/Jamie643/bedrock-fallback-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Jamie643/bedrock-fallback-engine/actions/workflows/ci.yml)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
 ## The problem
 
-Bedrock throttles. A region goes down. A model hits quota. When that happens mid-agent-workflow, your entire pipeline dies.
+Amazon Bedrock throttles. A region goes down. A model hits quota. When that happens mid-agent-workflow, your entire pipeline dies.
 
 `bedrock-fallback-engine` wraps the Converse API in a **route chain**:
 
-- **Cross-region failover** — `us-east-1` throttled? Try `us-west-2`.
+- **Cross-region failover** — us-east-1 throttled? Try us-west-2.
 - **Cross-model failover** — Claude down? Try Nova.
-- **Cross-provider failover** — Bedrock models all sick? Try Llama.
+- **Cross-provider failover** — Bedrock-native models all sick? Try Llama.
 - **Schema validation** — malformed JSON fails over to the next route instead of crashing.
-- **Structured errors** — every failed route is captured with its exception.
+- **Token accounting** — every invocation reports input/output tokens and which route served it.
 
 ---
 
@@ -48,10 +47,14 @@ engine = BedrockFallbackEngine(schema=Triage)
 result = engine.invoke([
     {"role": "user", "content": [{"text": "Classify: dashboard won't load."}]}
 ])
-# -> {"category": "bug", "urgency": "high"}
+
+print(result.value)          # {"category": "bug", "urgency": "high"}
+print(result.route.label)    # "primary"
+print(result.input_tokens)   # 42
+print(result.output_tokens)  # 11
 ```
 
-If the primary region or model fails, the next route runs automatically. If **every** route fails, you get a `BedrockRouteExhausted` with the full error trail.
+If the primary region or model fails, the next route runs automatically. If **every** route fails, you get a `BedrockRouteExhausted` with the full error trail — each entry tagged with the route label that produced it.
 
 ---
 
@@ -72,19 +75,39 @@ engine = BedrockFallbackEngine(routes=[
 
 ---
 
-## Why on top of agent-fallback-sentinel?
+## Design principles
 
-`agent-fallback-sentinel` solves **generic** retries, circuit breaking, and schema validation for any LLM. `bedrock-fallback-engine` is the **AWS-native** layer: it speaks the Converse API, understands Bedrock error codes, and knows AWS regions. Layered, not duplicated.
+1. **Zero surprises.** Route order is explicit; failover is deterministic.
+2. **Dependency-light.** Only `boto3` and `pydantic` at runtime.
+3. **Two loops, clearly separated.** Retries happen *within* a route; failover happens *between* routes.
+4. **Testable.** Inject a fake client factory; no AWS calls in the test suite.
+5. **Observable.** Every route attempt, retry, failure, and success emits an event you can hook into CloudWatch, Prometheus, or a logger.
+
+---
+
+## How retries vs. failover work
+
+```
+Route 1 (us-east-1, Claude)
+ ├─ attempt 1  fail
+ ├─ attempt 2  fail  (retry within route)
+ └─ attempt 3  fail  → give up on route
+
+Route 2 (us-west-2, Claude)
+ └─ attempt 1  success  ← returned
+```
+
+Retries (`max_retries`) apply **inside** each route. Failover is **between** routes. When a route can't be saved, the engine doesn't retry it forever — it moves on.
 
 ---
 
 ## Roadmap
 
 - [x] Cross-region / cross-model failover
-- [x] Schema validation
+- [x] Schema validation with failover
 - [x] Structured error trail
-- [ ] CloudWatch metrics emission (Sprint 2)
-- [ ] Token cost tracking per route
+- [x] Token usage per invocation
+- [ ] CloudWatch metrics emission
 - [ ] Local emergency fallback (Ollama)
 - [ ] Lambda deployment packaging
 
