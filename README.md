@@ -1,11 +1,16 @@
 # bedrock-fallback-engine
 
-> AWS-native resilience for Amazon Bedrock. Cross-region, cross-model failover with schema validation and per-route telemetry.
+> AWS-native resilience for Amazon Bedrock. Cross-region, cross-model failover with schema validation and per-route CloudWatch telemetry.
 
 [![CI](https://github.com/Jamie643/bedrock-fallback-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Jamie643/bedrock-fallback-engine/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**Watch us-east-1 fail. Watch the request still succeed.** ↓
+
+![Live failover demo](docs/demo.gif)
+
+*Same endpoint. Same response. Different region. Every failover is a CloudWatch metric.*
 ---
 
 ## The problem
@@ -71,6 +76,95 @@ engine = BedrockFallbackEngine(routes=[
     BedrockRoute("eu-west-1", "anthropic.claude-3-5-sonnet-20241022-v2:0"),
     BedrockRoute("eu-central-1", "amazon.nova-pro-v1:0"),
 ])
+```
+## Live failover demo
+
+The `demo/` folder contains a FastAPI app that demonstrates cross-region failover in real time. It runs **without AWS credentials** — the chaos client returns canned responses so judges can try it locally in 30 seconds.
+
+### Run it
+
+```bash
+pip install -e .
+pip install -r demo/requirements.txt
+
+BEDROCK_DEMO_DRY_RUN=1 uvicorn demo.app:app --reload
+```
+
+Open **http://localhost:8000/docs** for an interactive playground, or hit the endpoint directly:
+
+### Happy path — served by primary
+
+```bash
+curl -i -X POST http://localhost:8000/triage \
+  -H 'content-type: application/json' \
+  -d '{"text": "My dashboard is broken"}' | grep X-Route
+```
+
+```
+X-Route-Served-By: primary
+X-Route-Region: us-east-1
+```
+
+### Failover path — served by backup
+
+Add `?simulate_throttle=true` to force the primary route to fail:
+
+```bash
+curl -i -X POST 'http://localhost:8000/triage?simulate_throttle=true' \
+  -H 'content-type: application/json' \
+  -d '{"text": "My dashboard is broken"}' | grep X-Route
+```
+
+```
+X-Route-Served-By: cross-region
+X-Route-Region: us-west-2
+```
+
+**Same response body. Same status code. User never knew.**
+
+### Response headers
+
+Every invocation returns the routing decision as headers — perfect for demos, debugging, and dashboards:
+
+| Header | Meaning |
+|---|---|
+| `X-Route-Served-By` | Which route label answered |
+| `X-Route-Region` | AWS region that answered |
+| `X-Route-Model` | Bedrock model that answered |
+| `X-Input-Tokens` | Prompt tokens consumed |
+| `X-Output-Tokens` | Response tokens generated |
+| `X-Latency-Ms` | Route call latency in milliseconds |
+| `X-Attempts` | Total attempts before success |
+
+### Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Service health + route list |
+| `POST` | `/triage` | Classify a ticket (with automatic failover) |
+| `GET` | `/chaos/status` | Which routes are currently forced to fail |
+| `POST` | `/chaos/clear` | Reset the chaos set |
+
+### Run with real Bedrock
+
+```bash
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_DEFAULT_REGION=us-east-1
+unset BEDROCK_DEMO_DRY_RUN
+
+uvicorn demo.app:app --reload
+```
+
+### Run with Docker
+
+```bash
+docker build -t bedrock-demo -f demo/Dockerfile .
+docker run -p 8000:8000 bedrock-demo
+```
+
+Full demo docs: [`demo/README.md`](demo/README.md)
+
 ```
 ## CloudWatch telemetry
 
