@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bedrock-fallback-engine"
-version = "0.1.0"
+version = "0.2.1"
 description = "AWS-native resilience for Amazon Bedrock: cross-region and cross-model failover with schema validation and per-route telemetry."
 readme = "README.md"
 requires-python = ">=3.10"
