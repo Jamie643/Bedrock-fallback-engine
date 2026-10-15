@@ -15,6 +15,11 @@ from bedrock_fallback_engine import (
     BedrockRouteExhausted,
 )
 from bedrock_fallback_engine.client import ConverseResult
+from bedrock_fallback_engine.exceptions import (
+    BedrockEngineError,
+    BedrockThrottlingError,
+    BedrockTransientError,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -37,32 +42,60 @@ def _throttled() -> ClientError:
     )
 
 
+# Error code sets that mirror BedrockClient's mapping.
+_THROTTLING_CODES = {
+    "ThrottlingException",
+    "TooManyRequestsException",
+    "ServiceQuotaExceededException",
+}
+_TRANSIENT_CODES = {
+    "ModelTimeoutException",
+    "ModelNotReadyException",
+    "InternalServerException",
+    "ServiceUnavailableException",
+}
+
+
+class _StubBedrockClient:
+    """
+    Mimics BedrockClient.converse without touching boto3.
+
+    Normalizes ClientError into the same typed exceptions the real
+    BedrockClient raises, so the engine's typed error handlers fire.
+    """
+
+    def __init__(self, behaviors: dict[str, Any]) -> None:
+        self._behaviors = behaviors
+
+    def converse(
+        self,
+        model_id: str,
+        messages: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> ConverseResult:
+        behavior = self._behaviors[model_id]
+        if isinstance(behavior, ClientError):
+            code = behavior.response.get("Error", {}).get("Code", "Unknown")
+            if code in _THROTTLING_CODES:
+                raise BedrockThrottlingError(str(behavior)) from behavior
+            if code in _TRANSIENT_CODES:
+                raise BedrockTransientError(str(behavior)) from behavior
+            raise BedrockEngineError(str(behavior)) from behavior
+        if isinstance(behavior, Exception):
+            raise behavior
+        return behavior
+
+
 def _engine_with(
     behaviors: dict[str, Any],
     routes: list[BedrockRoute],
     **engine_kwargs: Any,
 ) -> BedrockFallbackEngine:
     """Build an engine whose client factory returns canned behaviors per model_id."""
-
-    class _Stub:
-        def __init__(self, model_behaviors: dict[str, Any]) -> None:
-            self._b = model_behaviors
-
-        def converse(
-            self,
-            model_id: str,
-            messages: list[dict[str, Any]],
-            **kwargs: Any,
-        ) -> ConverseResult:
-            behavior = self._b[model_id]
-            if isinstance(behavior, Exception):
-                raise behavior
-            return behavior
-
     return BedrockFallbackEngine(
         routes=routes,
         sleep_fn=lambda _: None,
-        client_factory=lambda region: _Stub(behaviors),  # type: ignore[arg-type]
+        client_factory=lambda region: _StubBedrockClient(behaviors),  # type: ignore[arg-type]
         **engine_kwargs,
     )
 
@@ -224,7 +257,7 @@ def test_negative_cooldown_rejected() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Observability
+# Observability (on_event)
 # --------------------------------------------------------------------------- #
 
 def test_events_emitted_on_success() -> None:
@@ -298,9 +331,9 @@ def test_broken_on_event_handler_does_not_break_pipeline() -> None:
         on_event=bad_handler,
     )
 
-    # Should not raise
     result = engine.invoke([{"role": "user", "content": [{"text": "hi"}]}])
     assert result.value["status"] == "ok"
+
 
 # --------------------------------------------------------------------------- #
 # Metrics emission
@@ -344,7 +377,13 @@ def test_metrics_emitted_on_failover() -> None:
     captured: list[str] = []
 
     class _Capture(CloudWatchMetricsEmitter):
-        def emit(self, name, value, unit="Count", dimensions=None) -> None:  # type: ignore[no-untyped-def]
+        def emit(
+            self,
+            name: str,
+            value: float,
+            unit: str = "Count",
+            dimensions: dict[str, str] | None = None,
+        ) -> None:
             captured.append(name)
 
     routes = [
@@ -374,7 +413,13 @@ def test_metrics_emitted_on_exhaustion() -> None:
     captured: list[str] = []
 
     class _Capture(CloudWatchMetricsEmitter):
-        def emit(self, name, value, unit="Count", dimensions=None) -> None:  # type: ignore[no-untyped-def]
+        def emit(
+            self,
+            name: str,
+            value: float,
+            unit: str = "Count",
+            dimensions: dict[str, str] | None = None,
+        ) -> None:
             captured.append(name)
 
     routes = [BedrockRoute(region="us-east-1", model_id="m1")]
@@ -396,7 +441,13 @@ def test_broken_metrics_do_not_break_pipeline() -> None:
     from bedrock_fallback_engine.metrics import CloudWatchMetricsEmitter
 
     class _Broken(CloudWatchMetricsEmitter):
-        def emit(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        def emit(
+            self,
+            name: str,
+            value: float,
+            unit: str = "Count",
+            dimensions: dict[str, str] | None = None,
+        ) -> None:
             raise RuntimeError("metrics down")
 
     routes = [BedrockRoute(region="us-east-1", model_id="m1")]
@@ -407,7 +458,6 @@ def test_broken_metrics_do_not_break_pipeline() -> None:
         metrics=_Broken(),
     )
 
-    # Should not raise
     result = engine.invoke([{"role": "user", "content": [{"text": "hi"}]}])
     assert result.value["status"] == "ok"
 
