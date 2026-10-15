@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bedrock-fallback-engine"
 version = "0.1.0"
-description = "AWS-native resilience layer for Amazon Bedrock: cross-region and cross-model failover with schema validation."
+description = "AWS-native resilience for Amazon Bedrock: cross-region and cross-model failover with schema validation and per-route telemetry."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Jamie643" }]
-keywords = ["aws", "bedrock", "llm", "resilience", "fallback", "circuit-breaker"]
+keywords = ["aws", "bedrock", "llm", "resilience", "fallback", "circuit-breaker", "cloudwatch"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -22,7 +22,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "agent-fallback-sentinel>=0.1.0",
     "boto3>=1.34",
     "pydantic>=2.0",
 ]
