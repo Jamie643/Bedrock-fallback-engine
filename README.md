@@ -2,10 +2,11 @@
 
 > AWS-native resilience for Amazon Bedrock. Cross-region, cross-model failover with schema validation and per-route CloudWatch telemetry.
 
-[![CI](https://github.com/Jamie643/bedrock-fallback-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Jamie643/bedrock-fallback-engine/actions/workflows/ci.yml)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![CI](https://github.com/Jamie643/Bedrock-fallback-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Jamie643/Bedrock-fallback-engine/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/bedrock-fallback-engine.svg)](https://pypi.org/project/bedrock-fallback-engine/)
+[![Python versions](https://img.shields.io/pypi/pyversions/bedrock-fallback-engine.svg)](https://pypi.org/project/bedrock-fallback-engine/)
+[![Docker](https://img.shields.io/badge/docker-demo%20ready-2496ED?logo=docker&logoColor=white)](demo/Dockerfile)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Publish to PyPI](https://github.com/Jamie643/Bedrock-fallback-engine/actions/workflows/publish.yml/badge.svg)](https://github.com/Jamie643/Bedrock-fallback-engine/actions/workflows/publish.yml)
 
 **Watch us-east-1 fail. Watch the request still succeed.** ↓
 
