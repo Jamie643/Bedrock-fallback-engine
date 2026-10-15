@@ -6,16 +6,13 @@ and agent-fallback-sentinel together.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Iterable
 
-from agent_fallback_sentinel import AgentSentinel, SentinelCircuitBreaker
+from agent_fallback_sentinel import AgentSentinel
 from pydantic import BaseModel
 
 from bedrock_fallback_engine.client import BedrockClient
-from bedrock_fallback_engine.exceptions import (
-    BedrockEngineError,
-    BedrockRouteExhausted,
-)
+from bedrock_fallback_engine.exceptions import BedrockRouteExhausted
 from bedrock_fallback_engine.regions import BedrockRoute, DEFAULT_ROUTES
 
 logger = logging.getLogger("bedrock_fallback_engine")
