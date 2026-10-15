@@ -30,3 +30,7 @@ Thumbs.db
 demo/.cache/
 *.mp4
 *.mov
+# Demo GIFs (only docs/demo.gif is committed)
+/demo.gif
+/demo/*.gif
+scripts/*.gif
