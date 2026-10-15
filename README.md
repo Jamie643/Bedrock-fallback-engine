@@ -5,6 +5,7 @@
 [![CI](https://github.com/Jamie643/bedrock-fallback-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Jamie643/bedrock-fallback-engine/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Publish to PyPI](https://github.com/Jamie643/Bedrock-fallback-engine/actions/workflows/publish.yml/badge.svg)](https://github.com/Jamie643/Bedrock-fallback-engine/actions/workflows/publish.yml)
 
 **Watch us-east-1 fail. Watch the request still succeed.** ↓
 
