@@ -72,7 +72,54 @@ engine = BedrockFallbackEngine(routes=[
     BedrockRoute("eu-central-1", "amazon.nova-pro-v1:0"),
 ])
 ```
+## CloudWatch telemetry
 
+Pass a `CloudWatchMetricsEmitter` to get structured metrics on every invocation.
+
+```python
+from bedrock_fallback_engine import (
+    BedrockFallbackEngine,
+    CloudWatchMetricsEmitter,
+)
+
+metrics = CloudWatchMetricsEmitter(namespace="MyApp/Bedrock", flush_size=20)
+engine = BedrockFallbackEngine(schema=Triage, metrics=metrics)
+
+engine.invoke([...])  # metrics emitted automatically
+
+```
+
+**Metrics emitted:**
+
+| Metric | Unit | Dimensions |
+|---|---|---|
+| `InvocationCount` | Count | RouteLabel, Region, ModelId, Status |
+| `InvocationLatency` | Milliseconds | RouteLabel, Region, ModelId |
+| `ThrottleCount` | Count | RouteLabel, Region, ModelId |
+| `TransientErrorCount` | Count | RouteLabel, Region, ModelId |
+| `FallbackTriggered` | Count | FromRoute, ToRoute |
+| `RouteExhausted` | Count | — |
+| `InputTokens` | Count | RouteLabel, Region, ModelId |
+| `OutputTokens` | Count | RouteLabel, Region, ModelId |
+
+Telemetry is **best-effort** — if CloudWatch is unreachable, the engine keeps working. Buffer auto-flushes at `flush_size` points. Call `metrics.flush()` explicitly at shutdown to drain the buffer.
+
+### Example CloudWatch Insights query
+
+```
+fields @timestamp, RouteLabel, FromRoute, ToRoute
+| filter MetricName = "FallbackTriggered"
+| sort @timestamp desc
+
+```
+
+---
+
+## AWS-native emergency fallback
+
+The default route chain includes **two AWS-native resilience tiers**:
+
+1. **Cross
 ---
 
 ## Design principles
