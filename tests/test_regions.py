@@ -19,14 +19,14 @@ def test_route_keeps_custom_label() -> None:
     assert route.label == "primary"
 
 
-def test_default_routes_include_cross_region() -> None:
+def test_default_routes_span_multiple_regions() -> None:
     regions = {r.region for r in DEFAULT_ROUTES}
-    assert len(regions) >= 2, "expected routes spanning multiple regions"
+    assert len(regions) >= 2
 
 
-def test_default_routes_include_cross_model() -> None:
+def test_default_routes_span_multiple_models() -> None:
     models = {r.model_id for r in DEFAULT_ROUTES}
-    assert len(models) >= 2, "expected routes using multiple models"
+    assert len(models) >= 2
 
 
 def test_routes_are_immutable() -> None:
