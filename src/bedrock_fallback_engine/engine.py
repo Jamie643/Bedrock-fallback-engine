@@ -81,10 +81,12 @@ class BedrockFallbackEngine:
         if cooldown < 0:
             raise ValueError("cooldown must be >= 0")
 
-        self.routes: tuple[BedrockRoute, ...] = tuple(routes or DEFAULT_ROUTES)
-        if not self.routes:
-            raise ValueError("at least one route is required")
-
+                if routes is None:
+            self.routes: tuple[BedrockRoute, ...] = DEFAULT_ROUTES
+        else:
+            self.routes = tuple(routes)
+            if not self.routes:
+                raise ValueError("at least one route is required")
         self.max_retries = max_retries
         self.cooldown = cooldown
         self.schema = schema
