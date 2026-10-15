@@ -4,15 +4,15 @@ FastAPI demo app for bedrock-fallback-engine.
 Run locally:
     pip install -r demo/requirements.txt
     pip install -e .
-    uvicorn demo.app:app --reload
+    BEDROCK_DEMO_DRY_RUN=1 uvicorn demo.app:app --reload
 
 Then:
-    curl -X POST http://localhost:8000/triage \\
+    curl -i -X POST http://localhost:8000/triage \\
       -H 'content-type: application/json' \\
       -d '{"text": "My dashboard is broken"}'
 
 Force failover:
-    curl -X POST 'http://localhost:8000/triage?simulate_throttle=true' \\
+    curl -i -X POST 'http://localhost:8000/triage?simulate_throttle=true' \\
       -H 'content-type: application/json' \\
       -d '{"text": "My dashboard is broken"}'
 """
@@ -35,7 +35,10 @@ from bedrock_fallback_engine.metrics import CloudWatchMetricsEmitter
 from demo.chaos import ChaosBedrockClient, active_failures, clear_failures, force_failure
 from demo.schemas import HealthResponse, TriageRequest, TriageResponse
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger("bedrock_demo")
 
 
@@ -46,9 +49,42 @@ logger = logging.getLogger("bedrock_demo")
 class _TriageOutput(BaseModel):
     """Shape the LLM must return for this endpoint."""
 
-    category: str = Field(..., description="Short label like 'bug', 'billing', 'feature-request'.")
+    category: str = Field(..., description="Short label like 'bug', 'billing'.")
     urgency: str = Field(..., description="One of 'low', 'medium', 'high'.")
     suggested_action: str = Field(..., description="A short, actionable next step.")
+
+
+# --------------------------------------------------------------------------- #
+# Demo routes
+# --------------------------------------------------------------------------- #
+
+_DEMO_ROUTES: list[BedrockRoute] = [
+    BedrockRoute(
+        region="us-east-1",
+        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        label="primary",
+    ),
+    BedrockRoute(
+        region="us-west-2",
+        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        label="cross-region",
+    ),
+    BedrockRoute(
+        region="us-east-1",
+        model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        label="cross-region-profile",
+    ),
+    BedrockRoute(
+        region="us-east-1",
+        model_id="amazon.nova-pro-v1:0",
+        label="cross-model-nova",
+    ),
+    BedrockRoute(
+        region="us-east-1",
+        model_id="amazon.titan-text-premier-v1:0",
+        label="emergency-titan",
+    ),
+]
 
 
 # --------------------------------------------------------------------------- #
@@ -66,21 +102,28 @@ def _build_engine() -> BedrockFallbackEngine:
     if dry_run:
         logger.info("DRY RUN: no AWS calls will be made")
 
-    # Map region+model to route label for the chaos client.
-    label_lookup = {(r.region, r.model_id): r.label for r in _DEMO_ROUTES}
-
+    # Engine tells us only the region, so we look up the route label by region.
     def _factory(region: str) -> ChaosBedrockClient:
-        # The engine only tells us the region; look up the matching route.
         for route in _DEMO_ROUTES:
             if route.region == region:
-                label = label_lookup.get((region, route.model_id), route.label)
-                return ChaosBedrockClient(region=region, route_label=label, dry_run=dry_run)
-        return ChaosBedrockClient(region=region, route_label=f"unknown:{region}", dry_run=dry_run)
+                return ChaosBedrockClient(
+                    region=region,
+                    route_label=route.label,
+                    dry_run=dry_run,
+                )
+        return ChaosBedrockClient(
+            region=region,
+            route_label=f"unknown:{region}",
+            dry_run=dry_run,
+        )
 
     metrics = None
     if os.environ.get("BEDROCK_DEMO_METRICS") == "1":
         logger.info("CloudWatch metrics enabled")
-        metrics = CloudWatchMetricsEmitter(namespace="BedrockFallback/Demo", flush_size=5)
+        metrics = CloudWatchMetricsEmitter(
+            namespace="BedrockFallback/Demo",
+            flush_size=5,
+        )
 
     return BedrockFallbackEngine(
         routes=_DEMO_ROUTES,
@@ -90,6 +133,15 @@ def _build_engine() -> BedrockFallbackEngine:
         client_factory=_factory,  # type: ignore[arg-type]
         metrics=metrics,
     )
+
+
+app = FastAPI(
+    title="bedrock-fallback-engine demo",
+    description="Live failover demo for Amazon Bedrock resilience.",
+    version="0.2.0",
+)
+
+_engine = _build_engine()
 
 
 # --------------------------------------------------------------------------- #
@@ -111,16 +163,14 @@ def triage(
     response: Response,
     simulate_throttle: bool = Query(
         False,
-        description="When true, forces the primary route to fail so judges can see failover live.",
+        description="Force the primary route to fail so judges can see failover live.",
     ),
     clear_chaos: bool = Query(
         False,
-        description="When true, resets the chaos set before handling this request.",
+        description="Reset the chaos set before handling this request.",
     ),
 ) -> TriageResponse:
-    """
-    Classify a support ticket via Bedrock with automatic cross-region failover.
-    """
+    """Classify a support ticket via Bedrock with automatic cross-region failover."""
     if clear_chaos:
         clear_failures()
 
@@ -157,7 +207,6 @@ def triage(
             },
         ) from exc
 
-    # Expose which route answered via a response header — great for demos.
     response.headers["X-Route-Served-By"] = result.route.label
     response.headers["X-Route-Region"] = result.route.region
     response.headers["X-Route-Model"] = result.route.model_id
