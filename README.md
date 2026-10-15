@@ -62,8 +62,14 @@ Amazon Bedrock throttles. A region goes down. A model hits quota. When that happ
 pip install bedrock-fallback-engine
 ```
 
-Requires AWS credentials configured (`aws configure`, env vars, or IAM role).
+Or with Docker for the demo:
 
+```bash
+docker build -t bedrock-demo -f demo/Dockerfile .
+docker run -p 8000:8000 bedrock-demo
+```
+
+Requires AWS credentials configured (`aws configure`, env vars, or IAM role) for real Bedrock calls. The demo runs without credentials in dry-run mode.
 ---
 
 ## Deploy to AWS Lambda
