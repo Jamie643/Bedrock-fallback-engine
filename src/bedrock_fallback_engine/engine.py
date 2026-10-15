@@ -15,7 +15,12 @@ from typing import Any
 from pydantic import BaseModel
 
 from bedrock_fallback_engine.client import BedrockClient, ConverseResult
-from bedrock_fallback_engine.exceptions import BedrockRouteExhausted
+from bedrock_fallback_engine.exceptions import (
+    BedrockRouteExhausted,
+    BedrockThrottlingError,
+    BedrockTransientError,
+)
+from bedrock_fallback_engine.metrics import CloudWatchMetricsEmitter
 from bedrock_fallback_engine.regions import DEFAULT_ROUTES, BedrockRoute
 
 logger = logging.getLogger("bedrock_fallback_engine")
@@ -32,6 +37,7 @@ class InvocationResult:
         input_tokens: Tokens consumed by the prompt on the winning route.
         output_tokens: Tokens generated on the winning route.
         attempts: Number of attempts made across all routes before success.
+        latency_ms: Wall-clock duration of the successful route call.
     """
 
     value: dict[str, Any]
@@ -39,6 +45,7 @@ class InvocationResult:
     input_tokens: int
     output_tokens: int
     attempts: int
+    latency_ms: float = 0.0
 
 
 @dataclass
@@ -64,6 +71,8 @@ class BedrockFallbackEngine:
         on_event: Optional observability hook. Events emitted:
             ``route_attempt``, ``route_retry``, ``route_failure``,
             ``route_success``, ``routes_exhausted``.
+        metrics: Optional :class:`CloudWatchMetricsEmitter`. When provided,
+            every invocation and failure emits CloudWatch metrics.
     """
 
     def __init__(
@@ -75,6 +84,7 @@ class BedrockFallbackEngine:
         sleep_fn: Callable[[float], None] = time.sleep,
         client_factory: Callable[[str], BedrockClient] | None = None,
         on_event: Callable[[str, dict[str, Any]], None] | None = None,
+        metrics: CloudWatchMetricsEmitter | None = None,
     ) -> None:
         if max_retries < 0:
             raise ValueError("max_retries must be >= 0")
@@ -87,12 +97,14 @@ class BedrockFallbackEngine:
             self.routes = tuple(routes)
             if not self.routes:
                 raise ValueError("at least one route is required")
+
         self.max_retries = max_retries
         self.cooldown = cooldown
         self.schema = schema
         self._sleep = sleep_fn
         self._client_factory = client_factory or (lambda region: BedrockClient(region=region))
         self._on_event = on_event
+        self._metrics = metrics
 
     # ------------------------------------------------------------------ #
     # Observability
@@ -105,6 +117,25 @@ class BedrockFallbackEngine:
             except Exception:  # noqa: BLE001
                 logger.exception("on_event callback raised; ignoring")
 
+    def _record_metric(
+        self,
+        name: str,
+        value: float,
+        unit: str,
+        dimensions: dict[str, str],
+    ) -> None:
+        if self._metrics is not None:
+            try:
+                self._metrics.emit(name, value, unit=unit, dimensions=dimensions)
+            except Exception:  # noqa: BLE001
+                logger.exception("metrics emit raised; ignoring")
+
+    @staticmethod
+    def _route_dimensions(route: BedrockRoute, **extra: str) -> dict[str, str]:
+        dims = {"RouteLabel": route.label, "Region": route.region, "ModelId": route.model_id}
+        dims.update(extra)
+        return dims
+
     # ------------------------------------------------------------------ #
     # Route execution
     # ------------------------------------------------------------------ #
@@ -115,12 +146,12 @@ class BedrockFallbackEngine:
         messages: list[dict[str, Any]],
         converse_kwargs: dict[str, Any],
         state: _RouteState,
-    ) -> ConverseResult | None:
+    ) -> tuple[ConverseResult, float] | None:
         """
         Try a single route up to ``max_retries + 1`` times.
 
-        Returns ``ConverseResult`` on success, or ``None`` if the route failed
-        every attempt (errors are appended to ``state.errors``).
+        Returns ``(ConverseResult, latency_ms)`` on success, or ``None`` if the
+        route failed every attempt (errors appended to ``state.errors``).
         """
         last_exc: Exception | None = None
 
@@ -131,21 +162,74 @@ class BedrockFallbackEngine:
                 {"route": route.label, "attempt": attempt, "region": route.region},
             )
 
+            started = time.monotonic()
             try:
                 client = self._client_factory(route.region)
-                return client.converse(route.model_id, messages, **converse_kwargs)
+                result = client.converse(route.model_id, messages, **converse_kwargs)
+                elapsed_ms = (time.monotonic() - started) * 1000
+
+                self._record_metric(
+                    "InvocationCount",
+                    1,
+                    "Count",
+                    self._route_dimensions(route, Status="Success"),
+                )
+                self._record_metric(
+                    "InvocationLatency",
+                    elapsed_ms,
+                    "Milliseconds",
+                    self._route_dimensions(route),
+                )
+                return result, elapsed_ms
+
+            except BedrockThrottlingError as exc:
+                last_exc = exc
+                self._record_metric(
+                    "ThrottleCount",
+                    1,
+                    "Count",
+                    self._route_dimensions(route),
+                )
+                self._record_metric(
+                    "InvocationCount",
+                    1,
+                    "Count",
+                    self._route_dimensions(route, Status="Throttled"),
+                )
+            except BedrockTransientError as exc:
+                last_exc = exc
+                self._record_metric(
+                    "TransientErrorCount",
+                    1,
+                    "Count",
+                    self._route_dimensions(route),
+                )
+                self._record_metric(
+                    "InvocationCount",
+                    1,
+                    "Count",
+                    self._route_dimensions(route, Status="TransientError"),
+                )
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
-                logger.warning(
-                    "route %s attempt %d/%d failed: %s",
-                    route.label,
-                    attempt,
-                    self.max_retries + 1,
-                    exc,
+                self._record_metric(
+                    "InvocationCount",
+                    1,
+                    "Count",
+                    self._route_dimensions(route, Status="Failure"),
                 )
-                if attempt <= self.max_retries:
-                    self._emit("route_retry", {"route": route.label, "attempt": attempt})
-                    self._sleep(self.cooldown)
+
+            logger.warning(
+                "route %s attempt %d/%d failed: %s",
+                route.label,
+                attempt,
+                self.max_retries + 1,
+                last_exc,
+            )
+
+            if attempt <= self.max_retries:
+                self._emit("route_retry", {"route": route.label, "attempt": attempt})
+                self._sleep(self.cooldown)
 
         if last_exc is not None:
             state.errors.append((route.label, last_exc))
@@ -161,10 +245,7 @@ class BedrockFallbackEngine:
         route: BedrockRoute,
         state: _RouteState,
     ) -> dict[str, Any] | None:
-        """
-        Validate against schema. Returns dumped dict on success, or ``None``
-        on validation failure (error appended to ``state.errors``).
-        """
+        """Validate against schema. Returns dumped dict on success."""
         if self.schema is None:
             return {"text": result.text}
 
@@ -194,15 +275,48 @@ class BedrockFallbackEngine:
         """
         state = _RouteState()
 
-        for route in self.routes:
+        for index, route in enumerate(self.routes):
             logger.info("trying route %s (%s)", route.label, route.region)
-            result = self._attempt_route(route, messages, converse_kwargs, state)
-            if result is None:
+            outcome = self._attempt_route(route, messages, converse_kwargs, state)
+
+            if outcome is None:
+                # Route failed entirely. Emit FallbackTriggered if there's a next route.
+                if index + 1 < len(self.routes):
+                    next_route = self.routes[index + 1]
+                    self._record_metric(
+                        "FallbackTriggered",
+                        1,
+                        "Count",
+                        {"FromRoute": route.label, "ToRoute": next_route.label},
+                    )
                 continue
 
+            result, latency_ms = outcome
             value = self._validate(result, route, state)
             if value is None:
+                # Schema failure counts as route failure; emit fallback metric if applicable.
+                if index + 1 < len(self.routes):
+                    next_route = self.routes[index + 1]
+                    self._record_metric(
+                        "FallbackTriggered",
+                        1,
+                        "Count",
+                        {"FromRoute": route.label, "ToRoute": next_route.label},
+                    )
                 continue
+
+            self._record_metric(
+                "InputTokens",
+                result.input_tokens,
+                "Count",
+                self._route_dimensions(route),
+            )
+            self._record_metric(
+                "OutputTokens",
+                result.output_tokens,
+                "Count",
+                self._route_dimensions(route),
+            )
 
             self._emit(
                 "route_success",
@@ -212,6 +326,7 @@ class BedrockFallbackEngine:
                     "input_tokens": result.input_tokens,
                     "output_tokens": result.output_tokens,
                     "attempts": state.total_attempts,
+                    "latency_ms": latency_ms,
                 },
             )
 
@@ -221,8 +336,10 @@ class BedrockFallbackEngine:
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 attempts=state.total_attempts,
+                latency_ms=latency_ms,
             )
 
+        self._record_metric("RouteExhausted", 1, "Count", {})
         self._emit(
             "routes_exhausted",
             {"total_attempts": state.total_attempts, "route_count": len(self.routes)},
