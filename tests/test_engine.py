@@ -181,4 +181,123 @@ def test_valid_json_but_missing_field_fails_over() -> None:
     engine = _engine_with(
         {
             "m1": _ok(json.dumps({"status": "ok"})),  # missing 'action'
-            "m2": _
+            "m2": _ok(json.dumps({"status": "ok", "action": "run"})),
+        },
+        routes,
+        schema=OutputSchema,
+        max_retries=0,
+    )
+
+    result = engine.invoke([{"role": "user", "content": [{"text": "hi"}]}])
+    assert result.value["action"] == "run"
+
+
+# --------------------------------------------------------------------------- #
+# No schema
+# --------------------------------------------------------------------------- #
+
+def test_no_schema_returns_text_dict() -> None:
+    routes = [BedrockRoute(region="us-east-1", model_id="m1")]
+    engine = _engine_with({"m1": _ok("hello world")}, routes, schema=None)
+
+    result = engine.invoke([{"role": "user", "content": [{"text": "hi"}]}])
+    assert result.value == {"text": "hello world"}
+
+
+# --------------------------------------------------------------------------- #
+# Config validation
+# --------------------------------------------------------------------------- #
+
+def test_empty_routes_rejected() -> None:
+    with pytest.raises(ValueError):
+        BedrockFallbackEngine(routes=[])
+
+
+def test_negative_max_retries_rejected() -> None:
+    with pytest.raises(ValueError):
+        BedrockFallbackEngine(max_retries=-1)
+
+
+def test_negative_cooldown_rejected() -> None:
+    with pytest.raises(ValueError):
+        BedrockFallbackEngine(cooldown=-0.1)
+
+
+# --------------------------------------------------------------------------- #
+# Observability
+# --------------------------------------------------------------------------- #
+
+def test_events_emitted_on_success() -> None:
+    events: list[tuple[str, dict[str, Any]]] = []
+    routes = [BedrockRoute(region="us-east-1", model_id="m1")]
+    engine = _engine_with(
+        {"m1": _ok(json.dumps({"status": "ok", "action": "run"}))},
+        routes,
+        schema=OutputSchema,
+        on_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    engine.invoke([{"role": "user", "content": [{"text": "hi"}]}])
+
+    names = [name for name, _ in events]
+    assert names == ["route_attempt", "route_success"]
+
+
+def test_events_emitted_on_failover() -> None:
+    events: list[tuple[str, dict[str, Any]]] = []
+    routes = [
+        BedrockRoute(region="us-east-1", model_id="m1"),
+        BedrockRoute(region="us-west-2", model_id="m2"),
+    ]
+    engine = _engine_with(
+        {
+            "m1": _throttled(),
+            "m2": _ok(json.dumps({"status": "ok", "action": "run"})),
+        },
+        routes,
+        schema=OutputSchema,
+        max_retries=0,
+        on_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    engine.invoke([{"role": "user", "content": [{"text": "hi"}]}])
+
+    names = [name for name, _ in events]
+    assert "route_attempt" in names
+    assert "route_failure" in names
+    assert "route_success" in names
+
+
+def test_routes_exhausted_event_emitted() -> None:
+    events: list[tuple[str, dict[str, Any]]] = []
+    routes = [BedrockRoute(region="us-east-1", model_id="m1")]
+    engine = _engine_with(
+        {"m1": _throttled()},
+        routes,
+        schema=OutputSchema,
+        max_retries=0,
+        on_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    with pytest.raises(BedrockRouteExhausted):
+        engine.invoke([{"role": "user", "content": [{"text": "hi"}]}])
+
+    names = [name for name, _ in events]
+    assert "routes_exhausted" in names
+
+
+def test_broken_on_event_handler_does_not_break_pipeline() -> None:
+    def bad_handler(_name: str, _payload: dict[str, Any]) -> None:
+        raise RuntimeError("telemetry broken")
+
+    routes = [BedrockRoute(region="us-east-1", model_id="m1")]
+    engine = _engine_with(
+        {"m1": _ok(json.dumps({"status": "ok", "action": "run"}))},
+        routes,
+        schema=OutputSchema,
+        on_event=bad_handler,
+    )
+
+    # Should not raise
+    result = engine.invoke([{"role": "user", "content": [{"text": "hi"}]}])
+    assert result.value["status"] == "ok"
