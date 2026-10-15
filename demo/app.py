@@ -55,60 +55,27 @@ class _TriageOutput(BaseModel):
 # Engine setup
 # --------------------------------------------------------------------------- #
 
-# Demo routes — labels match chaos keys.
-_DEMO_ROUTES = [
-    BedrockRoute(
-        region="us-east-1",
-        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
-        label="primary",
-    ),
-    BedrockRoute(
-        region="us-west-2",
-        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
-        label="cross-region",
-    ),
-    BedrockRoute(
-        region="us-east-1",
-        model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-        label="cross-region-profile",
-    ),
-    BedrockRoute(
-        region="us-east-1",
-        model_id="amazon.nova-pro-v1:0",
-        label="cross-model-nova",
-    ),
-    BedrockRoute(
-        region="us-east-1",
-        model_id="amazon.titan-text-premier-v1:0",
-        label="emergency-titan",
-    ),
-]
-
-
 def _build_engine() -> BedrockFallbackEngine:
     """
     Build the engine. Honors two env vars:
 
-    - ``BEDROCK_DEMO_DRY_RUN=1`` — use fake responses, no AWS calls.
+    - ``BEDROCK_DEMO_DRY_RUN=1`` — use canned responses, no AWS calls.
     - ``BEDROCK_DEMO_METRICS=1`` — emit CloudWatch metrics.
     """
-    client_factory = None
-    if os.environ.get("BEDROCK_DEMO_DRY_RUN") == "1":
-        logger.info("DRY RUN: using chaos client with fake responses")
+    dry_run = os.environ.get("BEDROCK_DEMO_DRY_RUN") == "1"
+    if dry_run:
+        logger.info("DRY RUN: no AWS calls will be made")
 
-        # We need per-route labels, so wrap the factory.
-        label_by_region_and_model = {r.model_id: r.label for r in _DEMO_ROUTES}
+    # Map region+model to route label for the chaos client.
+    label_lookup = {(r.region, r.model_id): r.label for r in _DEMO_ROUTES}
 
-        def _chaos_factory(region: str) -> ChaosBedrockClient:
-            # Pick the route's label by matching region+model — but the engine
-            # only passes region. We'll use a closure that returns a client
-            # whose label is derived from the region's first matching route.
-            for route in _DEMO_ROUTES:
-                if route.region == region:
-                    return ChaosBedrockClient(region=region, route_label=route.label)
-            return ChaosBedrockClient(region=region, route_label=f"unknown:{region}")
-
-        client_factory = _chaos_factory  # type: ignore[assignment]
+    def _factory(region: str) -> ChaosBedrockClient:
+        # The engine only tells us the region; look up the matching route.
+        for route in _DEMO_ROUTES:
+            if route.region == region:
+                label = label_lookup.get((region, route.model_id), route.label)
+                return ChaosBedrockClient(region=region, route_label=label, dry_run=dry_run)
+        return ChaosBedrockClient(region=region, route_label=f"unknown:{region}", dry_run=dry_run)
 
     metrics = None
     if os.environ.get("BEDROCK_DEMO_METRICS") == "1":
@@ -120,18 +87,9 @@ def _build_engine() -> BedrockFallbackEngine:
         schema=_TriageOutput,
         max_retries=1,
         cooldown=0.5,
-        client_factory=client_factory,
+        client_factory=_factory,  # type: ignore[arg-type]
         metrics=metrics,
     )
-
-
-app = FastAPI(
-    title="bedrock-fallback-engine demo",
-    description="Live failover demo for Amazon Bedrock resilience.",
-    version="0.2.0",
-)
-
-_engine = _build_engine()
 
 
 # --------------------------------------------------------------------------- #
