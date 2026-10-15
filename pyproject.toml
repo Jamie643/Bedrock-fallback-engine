@@ -40,6 +40,8 @@ dev = [
 Homepage = "https://github.com/Jamie643/bedrock-fallback-engine"
 Issues = "https://github.com/Jamie643/bedrock-fallback-engine/issues"
 
+[project.scripts]
+bedrock-fallback-engine = "bedrock_fallback_engine.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
