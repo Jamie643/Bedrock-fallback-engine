@@ -79,9 +79,9 @@ engine = BedrockFallbackEngine(routes=[
 ```
 ## Live failover demo
 
-The `demo/` folder contains a FastAPI app that demonstrates cross-region failover in real time. It runs **without AWS credentials** — the chaos client returns canned responses so judges can try it locally in 30 seconds.
+The `demo/` folder contains a FastAPI app that demonstrates cross-region failover in real time. It runs **without AWS credentials** — the chaos client returns canned responses so you can try it locally in 30 seconds.
 
-### Run it
+### Run it locally
 
 ```bash
 pip install -e .
@@ -90,7 +90,10 @@ pip install -r demo/requirements.txt
 BEDROCK_DEMO_DRY_RUN=1 uvicorn demo.app:app --reload
 ```
 
-Open **http://localhost:8000/docs** for an interactive playground, or hit the endpoint directly:
+Leave that terminal running. Then, in a second terminal, either:
+
+- **Interactive playground:** open `http://localhost:8000/docs` in your browser (FastAPI auto-generates Swagger UI), or
+- **Direct `curl` calls:** use the examples below.
 
 ### Happy path — served by primary
 
