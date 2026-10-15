@@ -38,6 +38,36 @@ Requires AWS credentials configured (`aws configure`, env vars, or IAM role).
 
 ---
 
+## Deploy to AWS Lambda
+
+The library ships a small CLI that builds a Lambda-ready deployment zip:
+
+```bash
+pip install bedrock-fallback-engine
+
+# Build a minimal zip (assumes Lambda's Python 3.12 runtime provides boto3)
+bedrock-fallback-engine package
+
+# → ✅ Wrote dist/lambda_layer.zip
+#    Size: 1.24 MB
+
+# Deploy it
+aws lambda update-function-code \
+  --function-name my-triage-fn \
+  --zip-file fileb://dist/lambda_layer.zip
+```
+
+**Options:**
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--output` / `-o` | `dist/lambda_layer.zip` | Output path |
+| `--include-boto3` | off | Bundle boto3 (Lambda's runtime already provides it) |
+| `--verbose` / `-v` | off | Debug-level logging |
+
+If your Lambda uses a custom runtime without boto3, pass `--include-boto3` to bundle it.
+```
+
 ## Quickstart
 
 ```python
