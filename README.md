@@ -13,6 +13,37 @@
 
 *Same endpoint. Same response. Different region. Every failover is a CloudWatch metric.*
 ---
+## Architecture
+
+```mermaid
+flowchart TD
+    A[Incoming Request] --> B[BedrockFallbackEngine.invoke]
+    B --> C{Route 1<br/>us-east-1 Claude}
+    C -->|success| Z[Return InvocationResult]
+    C -->|throttle/error| D{Retry within route<br/>up to max_retries}
+    D -->|fail| E{Route 2<br/>us-west-2 Claude}
+    E -->|success| Z
+    E -->|fail| F{Route 3<br/>cross-region profile}
+    F -->|success| Z
+    F -->|fail| G{Route 4<br/>Nova Pro}
+    G -->|success| Z
+    G -->|fail| H{Route 5<br/>Titan emergency}
+    H -->|success| Z
+    H -->|fail| Y[BedrockRouteExhausted<br/>with structured error trail]
+    Z --> M[CloudWatch<br/>MetricsEmitter]
+    Y --> M
+    
+    style C fill:#3ad082,color:#000
+    style E fill:#48a8ec,color:#000
+    style F fill:#48a8ec,color:#000
+    style G fill:#48a8ec,color:#000
+    style H fill:#e89632,color:#000
+    style Y fill:#e84e4e,color:#000
+    style M fill:#9457d4,color:#000
+```
+
+Every attempt, failure, and fallback emits a CloudWatch metric. Every route failure is captured with its route label in the exception trail.
+```
 
 ## The problem
 
