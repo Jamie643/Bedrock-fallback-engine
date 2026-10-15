@@ -14,7 +14,7 @@ from bedrock_fallback_engine import (
     BedrockRoute,
     BedrockRouteExhausted,
 )
-from bedrock_fallback_engine.client import BedrockClient, ConverseResult
+from bedrock_fallback_engine.client import ConverseResult
 
 
 # --------------------------------------------------------------------------- #
