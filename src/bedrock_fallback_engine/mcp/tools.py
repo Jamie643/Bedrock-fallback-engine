@@ -12,7 +12,7 @@ Four tools:
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
@@ -244,4 +244,4 @@ def _make_dynamic_model(schema_dict: dict[str, Any]) -> type[BaseModel]:
             fields[field_name] = (type_map[type_name] | None, None)
 
     model = create_model("DynamicModel", **fields)
-    return model
+    return cast(type[BaseModel], model)
