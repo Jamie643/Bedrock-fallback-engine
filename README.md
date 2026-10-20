@@ -14,6 +14,67 @@
 
 *Same endpoint. Same response. Different region. Every failover is a CloudWatch metric.*
 ---
+## 🎙️ Use with Alexa+ (via MCP)
+
+This repository ships a **Model Context Protocol (MCP) server** that Alexa+ skills can invoke as a tool. When a user asks Alexa+ a complex query, the skill calls this MCP server — which routes the request across Bedrock models and regions, ensuring zero downtime if the primary model throttles or a region fails.
+
+**Why it matters for Alexa+:** voice interactions cannot tolerate "please try again later." When `us-east-1` throttles, an Alexa+ skill that calls Bedrock directly fails the request. With `bedrock-fallback-engine`, the request silently fails over to `us-west-2` — the user never hears the interruption.
+
+### MCP tools exposed
+
+| Tool | What it does |
+|---|---|
+| `bedrock_resilient_call` | Bedrock call with automatic cross-region/model failover |
+| `list_bedrock_routes` | Inspect the current route chain |
+| `get_fallback_stats` | Session stats: attempts, failovers, token usage |
+| `health_check` | Verify AWS credentials are configured |
+
+### Example Alexa+ → MCP interaction
+
+```
+User: "Alexa, plan my week"
+  │
+  ▼
+Alexa+ skill → MCP tool: bedrock_resilient_call(
+    prompt="Plan a productive week for a software engineer...",
+    max_retries=2
+  )
+  │
+  ▼
+bedrock-fallback-engine
+  │
+  ├─ Route 1: us-east-1 Claude 3.5 Sonnet → THROTTLED (429)
+  ├─ Route 2: us-west-2 Claude 3.5 Sonnet → 200 OK ✅
+  │
+  ▼
+Alexa+ responds: "Here's your week..."
+(User never notices the failover.)
+```
+
+### Install the MCP server
+
+```bash
+pip install "bedrock-fallback-engine[mcp]"
+```
+
+Add to Claude Desktop config (or any MCP client):
+
+```json
+{
+  "mcpServers": {
+    "bedrock-fallback-engine": {
+      "command": "uvx",
+      "args": ["--from", "bedrock-fallback-engine[mcp]", "bedrock-fallback-engine-mcp"],
+      "env": {
+        "AWS_ACCESS_KEY_ID": "AKIA...",
+        "AWS_SECRET_ACCESS_KEY": "...",
+        "AWS_DEFAULT_REGION": "us-east-1"
+      }
+    }
+  }
+}
+```
+---
 ## Architecture
 
 ```mermaid
