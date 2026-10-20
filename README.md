@@ -1,4 +1,4 @@
-# bedrock-fallback-engine
+# Bedrock-fallback-engine
 
 > AWS-native resilience for Amazon Bedrock. Cross-region, cross-model failover with schema validation and per-route CloudWatch telemetry.
 
