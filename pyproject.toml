@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bedrock-fallback-engine"
 version = "0.3.0"
-description = "AWS-native resilience for Amazon Bedrock: cross-region and cross-model failover with schema validation and per-route telemetry."
+description = "AWS-native resilience layer for Amazon Bedrock: cross-region and cross-model failover with schema validation."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Jamie643" }]
-keywords = ["aws", "bedrock", "llm", "resilience", "fallback", "circuit-breaker", "cloudwatch"]
+keywords = ["aws", "bedrock", "llm", "resilience", "fallback", "circuit-breaker", "mcp", "alexa"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -40,14 +40,13 @@ dev = [
 ]
 
 [project.scripts]
+bedrock-fallback-engine = "bedrock_fallback_engine.cli:main"
 bedrock-fallback-engine-mcp = "bedrock_fallback_engine.mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/Jamie643/bedrock-fallback-engine"
-Issues = "https://github.com/Jamie643/bedrock-fallback-engine/issues"
+Homepage = "https://github.com/Jamie643/Bedrock-fallback-engine"
+Issues = "https://github.com/Jamie643/Bedrock-fallback-engine/issues"
 
-[project.scripts]
-bedrock-fallback-engine = "bedrock_fallback_engine.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -58,10 +57,16 @@ addopts = "-v --cov=bedrock_fallback_engine --cov-report=term-missing"
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+exclude = [
+    "scripts",
+    ".venv",
+    "build",
+    "dist",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
-ignore = ["N818", "I001", "E501", "N803", "N806", "UP034"]
+ignore = ["N818", "I001", "E501", "N803", "N806"]
 
 [tool.mypy]
 python_version = "3.10"
