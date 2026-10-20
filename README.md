@@ -6,6 +6,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/bedrock-fallback-engine.svg)](https://pypi.org/project/bedrock-fallback-engine/)
 [![Python versions](https://img.shields.io/pypi/pyversions/bedrock-fallback-engine.svg)](https://pypi.org/project/bedrock-fallback-engine/)
 [![Docker](https://img.shields.io/badge/docker-demo%20ready-2496ED?logo=docker&logoColor=white)](demo/Dockerfile)
+[![MCP](https://img.shields.io/badge/MCP-compatible-8B5CF6)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Watch us-east-1 fail. Watch the request still succeed.** ↓
