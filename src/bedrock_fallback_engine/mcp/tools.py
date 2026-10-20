@@ -18,7 +18,6 @@ from pydantic import BaseModel
 
 from bedrock_fallback_engine import (
     BedrockFallbackEngine,
-    BedrockRoute,
     BedrockRouteExhausted,
 )
 from bedrock_fallback_engine.mcp.state import SESSION
@@ -39,7 +38,7 @@ class _StructuredOutput(BaseModel):
 # Tool registration
 # --------------------------------------------------------------------------- #
 
-def register_tools(mcp: "FastMCP") -> None:
+def register_tools(mcp: FastMCP) -> None:
     """Register all MCP tools on the given FastMCP instance."""
 
     @mcp.tool()  # type: ignore[untyped-decorator]
